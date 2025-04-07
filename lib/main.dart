@@ -64,7 +64,7 @@ class _MyHomePageState extends State<MyHomePage> {
   initializeCamera() async {
     controller = CameraController(description, ResolutionPreset.medium,
         imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21 // for Android
+            ? ImageFormatGroup.yuv420 // for Android
             : ImageFormatGroup.bgra8888,
         enableAudio: false); // for iOS);
     await controller.initialize().then((_) {
@@ -80,6 +80,25 @@ class _MyHomePageState extends State<MyHomePage> {
           });
     });
   }
+  // initializeCamera() async {
+  //   controller = CameraController(description, ResolutionPreset.medium,
+  //       imageFormatGroup: Platform.isAndroid
+  //           ? ImageFormatGroup.nv21 // for Android
+  //           : ImageFormatGroup.bgra8888,
+  //       enableAudio: false); // for iOS);
+  //   await controller.initialize().then((_) {
+  //     if (!mounted) {
+  //       return;
+  //     }
+  //     setState(() {
+  //       controller;
+  //     });
+  //     controller.startImageStream((image) => {
+  //           if (!isBusy)
+  //             {isBusy = true, frame = image, doFaceDetectionOnFrame()}
+  //         });
+  //   });
+  // }
 
   //TODO close all resources
   @override
@@ -92,21 +111,54 @@ class _MyHomePageState extends State<MyHomePage> {
   dynamic _scanResults;
   CameraImage? frame;
   doFaceDetectionOnFrame() async {
-    //TODO convert frame into InputImage format
+    if (frame == null) {
+      isBusy = false;
+      return;
+    }
 
     InputImage? inputImage = getInputImage();
-    //TODO pass InputImage to face detection model and detect faces
+    if (inputImage == null) {
+      isBusy = false;
+      return;
+    }
 
-    List<Face> faces = await faceDetector.processImage(inputImage!);
+    try {
+      List<Face> faces = await faceDetector.processImage(inputImage);
+      print("Number of faces detected: ${faces.length}");
 
-    print("fl=" + faces.length.toString());
-    //TODO perform face recognition on detected faces
-    performFaceRecognition(faces);
-    // setState(() {
-    //   _scanResults = faces;
-    //   isBusy = false;
-    // });
+      // Only process if we have faces
+      if (faces.isNotEmpty) {
+        await performFaceRecognition(faces);
+      }
+
+      setState(() {
+        _scanResults = faces.isNotEmpty ? recognitions : [];
+        isBusy = false;
+      });
+    } catch (e) {
+      print("Error in face detection: $e");
+      setState(() {
+        isBusy = false;
+      });
+    }
   }
+
+  // doFaceDetectionOnFrame() async {
+  //   //TODO convert frame into InputImage format
+  //
+  //   InputImage? inputImage = getInputImage();
+  //   //TODO pass InputImage to face detection model and detect faces
+  //
+  //   List<Face> faces = await faceDetector.processImage(inputImage!);
+  //
+  //   print("fl=" + faces.length.toString());
+  //   //TODO perform face recognition on detected faces
+  //   performFaceRecognition(faces);
+  //   setState(() {
+  //     _scanResults = faces;
+  //     isBusy = false;
+  //   });
+  // }
 
   img.Image? image;
   bool register = false;
@@ -115,11 +167,22 @@ class _MyHomePageState extends State<MyHomePage> {
     recognitions.clear();
 
     //TODO convert CameraImage to Image and rotate it so that our frame will be in a portrait
-    image = Platform.isIOS
-        ? _convertBGRA8888ToImage(frame!) as img.Image?
-        : _convertNV21(frame!);
+
+    if (Platform.isIOS) {
+      image = _convertBGRA8888ToImage(frame!);
+    } else {
+      image =
+          convertYUV420ToImage(frame!); // Use your YUV420_888 Conversion method
+    }
+
     image = img.copyRotate(image!,
         angle: camDirec == CameraLensDirection.front ? 270 : 90);
+
+    // image = Platform.isIOS
+    //     ? _convertBGRA8888ToImage(frame!) as img.Image?
+    //     : _convertNV21(frame!);
+    // image = img.copyRotate(image!,
+    //     angle: camDirec == CameraLensDirection.front ? 270 : 90);
 
     for (Face face in faces) {
       Rect faceRect = face.boundingBox;
@@ -131,7 +194,7 @@ class _MyHomePageState extends State<MyHomePage> {
           height: faceRect.height.toInt());
 
       //TODO pass cropped face to face recognition model
-      Recognition recognition = recognizer.recognize(croppedFace!, faceRect);
+      Recognition recognition = recognizer.recognize(croppedFace, faceRect);
       if (recognition.distance > 1.0) {
         recognition.name = "Unknown";
       }
@@ -139,7 +202,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
       //TODO show face registration dialogue
       if (register) {
-        showFaceRegistrationDialogue(croppedFace!, recognition);
+        showFaceRegistrationDialogue(croppedFace, recognition);
         register = false;
       }
     }
@@ -167,7 +230,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 height: 20,
               ),
               Image.memory(
-                Uint8List.fromList(img.encodeBmp(croppedFace!)),
+                Uint8List.fromList(img.encodeBmp(croppedFace)),
                 width: 200,
                 height: 200,
               ),
@@ -314,49 +377,139 @@ class _MyHomePageState extends State<MyHomePage> {
     DeviceOrientation.landscapeRight: 270,
   };
 
-  //TODO convert CameraImage to InputImage
   InputImage? getInputImage() {
-    final camera =
-        camDirec == CameraLensDirection.front ? cameras[1] : cameras[0];
+    if (controller == null || !controller!.value.isInitialized) {
+      return null;
+    }
+
+    if (frame == null) {
+      return null;
+    }
+    // Always using the front camera
+    final camera = cameras[1]; // Front camera
     final sensorOrientation = camera.sensorOrientation;
 
-    InputImageRotation? rotation;
-    if (Platform.isIOS) {
-      rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
-    } else if (Platform.isAndroid) {
-      var rotationCompensation =
-          _orientations[controller!.value.deviceOrientation];
-      if (rotationCompensation == null) return null;
-      if (camera.lensDirection == CameraLensDirection.front) {
-        // front-facing
-        rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
-      } else {
-        // back-facing
-        rotationCompensation =
-            (sensorOrientation - rotationCompensation + 360) % 360;
-      }
-      rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
+    // Calculate rotation compensation
+    var rotationCompensation =
+        _orientations[controller!.value.deviceOrientation];
+    if (rotationCompensation == null) {
+      return null;
     }
-    if (rotation == null) return null;
 
-    final format = InputImageFormatValue.fromRawValue(frame!.format.raw);
-    if (format == null ||
-        (Platform.isAndroid && format != InputImageFormat.nv21) ||
-        (Platform.isIOS && format != InputImageFormat.bgra8888)) return null;
+    // Adjust rotation for front camera
+    rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
 
-    if (frame!.planes.length != 1) return null;
-    final plane = frame!.planes.first;
+    // Get the rotation value
+    InputImageRotation? rotation =
+        InputImageRotationValue.fromRawValue(rotationCompensation);
+    if (rotation == null) {
+      return null;
+    }
+
+    // Convert YUV_420_888 (format 35) to NV21
+    print("🔹 Detected format: ${frame!.format.raw}");
+    Uint8List? convertedBytes;
+    if (frame!.format.raw == 35) {
+      // YUV_420_888
+      convertedBytes = convertYUV420ToNV21(frame!);
+      if (convertedBytes == null) {
+        return null;
+      }
+    } else {
+      return null;
+    }
 
     return InputImage.fromBytes(
-      bytes: plane.bytes,
+      bytes: convertedBytes, // Use the converted NV21 bytes
       metadata: InputImageMetadata(
         size: Size(frame!.width.toDouble(), frame!.height.toDouble()),
         rotation: rotation,
-        format: format,
-        bytesPerRow: plane.bytesPerRow,
+        format: InputImageFormat.nv21, // Force NV21 format
+        bytesPerRow: frame!.width, // Ensure correct row alignment
       ),
     );
   }
+
+  Uint8List? convertYUV420ToNV21(CameraImage image) {
+    try {
+      final int width = image.width;
+      final int height = image.height;
+      final int ySize = width * height;
+      final int uvSize = ySize ~/ 4;
+
+      final Uint8List nv21 = Uint8List(ySize + 2 * uvSize);
+      final Uint8List y = image.planes[0].bytes;
+      final Uint8List u = image.planes[1].bytes;
+      final Uint8List v = image.planes[2].bytes;
+
+      // Copy Y channel (Luma)
+      for (int i = 0; i < height; i++) {
+        nv21.setRange(
+            i * width,
+            (i * width) + width,
+            y.sublist(i * image.planes[0].bytesPerRow,
+                (i * image.planes[0].bytesPerRow) + width));
+      }
+
+      // Interleave U and V channels (Chroma)
+      int uvIndex = ySize;
+      for (int i = 0; i < height ~/ 2; i++) {
+        for (int j = 0; j < width ~/ 2; j++) {
+          nv21[uvIndex++] = v[i * image.planes[2].bytesPerRow +
+              j * image.planes[2].bytesPerPixel!]; // V
+          nv21[uvIndex++] = u[i * image.planes[1].bytesPerRow +
+              j * image.planes[1].bytesPerPixel!]; // U
+        }
+      }
+
+      return nv21;
+    } catch (e) {
+      print("❌ Error converting YUV to NV21: $e");
+      return null;
+    }
+  }
+  // InputImage? getInputImage() {
+  //   final camera =
+  //       camDirec == CameraLensDirection.front ? cameras[1] : cameras[0];
+  //   final sensorOrientation = camera.sensorOrientation;
+  //
+  //   InputImageRotation? rotation;
+  //   if (Platform.isIOS) {
+  //     rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+  //   } else if (Platform.isAndroid) {
+  //     var rotationCompensation =
+  //         _orientations[controller!.value.deviceOrientation];
+  //     if (rotationCompensation == null) return null;
+  //     if (camera.lensDirection == CameraLensDirection.front) {
+  //       // front-facing
+  //       rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
+  //     } else {
+  //       // back-facing
+  //       rotationCompensation =
+  //           (sensorOrientation - rotationCompensation + 360) % 360;
+  //     }
+  //     rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
+  //   }
+  //   if (rotation == null) return null;
+  //
+  //   final format = InputImageFormatValue.fromRawValue(frame!.format.raw);
+  //   if (format == null ||
+  //       (Platform.isAndroid && format != InputImageFormat.nv21) ||
+  //       (Platform.isIOS && format != InputImageFormat.bgra8888)) return null;
+  //
+  //   if (frame!.planes.length != 1) return null;
+  //   final plane = frame!.planes.first;
+  //
+  //   return InputImage.fromBytes(
+  //     bytes: plane.bytes,
+  //     metadata: InputImageMetadata(
+  //       size: Size(frame!.width.toDouble(), frame!.height.toDouble()),
+  //       rotation: rotation,
+  //       format: format,
+  //       bytesPerRow: plane.bytesPerRow,
+  //     ),
+  //   );
+  // }
 
   Widget buildResult() {
     if (_scanResults == null ||
