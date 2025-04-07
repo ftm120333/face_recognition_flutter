@@ -127,7 +127,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
       //pass cropped face to face recognition model
       Recognition recognition = recognizer.recognize(croppedFace, faceRect);
-      if (recognition.distance > 0.6) {
+      // if (recognition.distance > 0.6) {
+      //   recognition.name = "Unknown";
+      // }
+      if (recognition.distance > 1.0) {
         recognition.name = "Unknown";
       }
       recognitions.add(recognition);
