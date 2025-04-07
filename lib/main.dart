@@ -49,18 +49,13 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-
-    //TODO initialize face detector
     var options =
         FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate);
     faceDetector = FaceDetector(options: options);
-    //TODO initialize face recognizer
     recognizer = Recognizer();
-    //TODO initialize camera footage
     initializeCamera();
   }
 
-  //TODO code to initialize the camera feed
   initializeCamera() async {
     controller = CameraController(description, ResolutionPreset.medium,
         imageFormatGroup: Platform.isAndroid
@@ -80,93 +75,30 @@ class _MyHomePageState extends State<MyHomePage> {
           });
     });
   }
-  // initializeCamera() async {
-  //   controller = CameraController(description, ResolutionPreset.medium,
-  //       imageFormatGroup: Platform.isAndroid
-  //           ? ImageFormatGroup.nv21 // for Android
-  //           : ImageFormatGroup.bgra8888,
-  //       enableAudio: false); // for iOS);
-  //   await controller.initialize().then((_) {
-  //     if (!mounted) {
-  //       return;
-  //     }
-  //     setState(() {
-  //       controller;
-  //     });
-  //     controller.startImageStream((image) => {
-  //           if (!isBusy)
-  //             {isBusy = true, frame = image, doFaceDetectionOnFrame()}
-  //         });
-  //   });
-  // }
 
-  //TODO close all resources
   @override
   void dispose() {
     controller?.dispose();
     super.dispose();
   }
 
-  //TODO face detection on a frame
+  //face detection on a frame
+
   dynamic _scanResults;
   CameraImage? frame;
   doFaceDetectionOnFrame() async {
-    if (frame == null) {
-      isBusy = false;
-      return;
-    }
-
     InputImage? inputImage = getInputImage();
-    if (inputImage == null) {
-      isBusy = false;
-      return;
+    List<Face> faces = await faceDetector.processImage(inputImage!);
+    for (Face face in faces) {
+      print("Face detected: ${face.boundingBox}");
     }
-
-    try {
-      List<Face> faces = await faceDetector.processImage(inputImage);
-      print("Number of faces detected: ${faces.length}");
-
-      // Only process if we have faces
-      if (faces.isNotEmpty) {
-        await performFaceRecognition(faces);
-      }
-
-      setState(() {
-        _scanResults = faces.isNotEmpty ? recognitions : [];
-        isBusy = false;
-      });
-    } catch (e) {
-      print("Error in face detection: $e");
-      setState(() {
-        isBusy = false;
-      });
-    }
+    performFaceRecognition(faces);
   }
-
-  // doFaceDetectionOnFrame() async {
-  //   //TODO convert frame into InputImage format
-  //
-  //   InputImage? inputImage = getInputImage();
-  //   //TODO pass InputImage to face detection model and detect faces
-  //
-  //   List<Face> faces = await faceDetector.processImage(inputImage!);
-  //
-  //   print("fl=" + faces.length.toString());
-  //   //TODO perform face recognition on detected faces
-  //   performFaceRecognition(faces);
-  //   setState(() {
-  //     _scanResults = faces;
-  //     isBusy = false;
-  //   });
-  // }
 
   img.Image? image;
   bool register = false;
-  // TODO perform Face Recognition
   performFaceRecognition(List<Face> faces) async {
     recognitions.clear();
-
-    //TODO convert CameraImage to Image and rotate it so that our frame will be in a portrait
 
     if (Platform.isIOS) {
       image = _convertBGRA8888ToImage(frame!);
@@ -174,7 +106,7 @@ class _MyHomePageState extends State<MyHomePage> {
       image =
           convertYUV420ToImage(frame!); // Use your YUV420_888 Conversion method
     }
-
+    // creates a new image that contains only the face region.
     image = img.copyRotate(image!,
         angle: camDirec == CameraLensDirection.front ? 270 : 90);
 
@@ -186,21 +118,21 @@ class _MyHomePageState extends State<MyHomePage> {
 
     for (Face face in faces) {
       Rect faceRect = face.boundingBox;
-      //TODO crop face
+      //crop face
       img.Image croppedFace = img.copyCrop(image!,
           x: faceRect.left.toInt(),
           y: faceRect.top.toInt(),
           width: faceRect.width.toInt(),
           height: faceRect.height.toInt());
 
-      //TODO pass cropped face to face recognition model
+      //pass cropped face to face recognition model
       Recognition recognition = recognizer.recognize(croppedFace, faceRect);
-      if (recognition.distance > 1.0) {
+      if (recognition.distance > 0.6) {
         recognition.name = "Unknown";
       }
       recognitions.add(recognition);
 
-      //TODO show face registration dialogue
+      //show face registration dialogue
       if (register) {
         showFaceRegistrationDialogue(croppedFace, recognition);
         register = false;
@@ -213,7 +145,7 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  //TODO Face Registration Dialogue
+  // Face Registration Dialogue
   TextEditingController textEditingController = TextEditingController();
   showFaceRegistrationDialogue(img.Image croppedFace, Recognition recognition) {
     showDialog(
@@ -230,7 +162,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 height: 20,
               ),
               Image.memory(
-                Uint8List.fromList(img.encodeBmp(croppedFace)),
+                Uint8List.fromList(img.encodePng(croppedFace)),
                 width: 200,
                 height: 200,
               ),
@@ -283,6 +215,7 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  // Converts NV21 CameraImage to a usable RGB image (img.Image)
   static img.Image _convertNV21(CameraImage image) {
     final width = image.width.toInt();
     final height = image.height.toInt();
@@ -325,7 +258,7 @@ class _MyHomePageState extends State<MyHomePage> {
     return outImg;
   }
 
-  // TODO method to convert CameraImage to Image
+  // method to convert CameraImage to Image
   img.Image convertYUV420ToImage(CameraImage cameraImage) {
     final width = cameraImage.width;
     final height = cameraImage.height;
@@ -351,6 +284,46 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
     return image;
+  }
+
+  //Converts YUV420 (camera format) to raw NV21 byte array
+  Uint8List? convertYUV420ToNV21(CameraImage image) {
+    try {
+      final int width = image.width;
+      final int height = image.height;
+      final int ySize = width * height;
+      final int uvSize = ySize ~/ 4;
+
+      final Uint8List nv21 = Uint8List(ySize + 2 * uvSize);
+      final Uint8List y = image.planes[0].bytes;
+      final Uint8List u = image.planes[1].bytes;
+      final Uint8List v = image.planes[2].bytes;
+
+      // Copy Y channel (Luma)
+      for (int i = 0; i < height; i++) {
+        nv21.setRange(
+            i * width,
+            (i * width) + width,
+            y.sublist(i * image.planes[0].bytesPerRow,
+                (i * image.planes[0].bytesPerRow) + width));
+      }
+
+      // Interleave U and V channels (Chroma)
+      int uvIndex = ySize;
+      for (int i = 0; i < height ~/ 2; i++) {
+        for (int j = 0; j < width ~/ 2; j++) {
+          nv21[uvIndex++] = v[i * image.planes[2].bytesPerRow +
+              j * image.planes[2].bytesPerPixel!]; // V
+          nv21[uvIndex++] = u[i * image.planes[1].bytesPerRow +
+              j * image.planes[1].bytesPerPixel!]; // U
+        }
+      }
+
+      return nv21;
+    } catch (e) {
+      print("❌ Error converting YUV to NV21: $e");
+      return null;
+    }
   }
 
   int yuv2rgb(int y, int u, int v) {
@@ -430,87 +403,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Uint8List? convertYUV420ToNV21(CameraImage image) {
-    try {
-      final int width = image.width;
-      final int height = image.height;
-      final int ySize = width * height;
-      final int uvSize = ySize ~/ 4;
-
-      final Uint8List nv21 = Uint8List(ySize + 2 * uvSize);
-      final Uint8List y = image.planes[0].bytes;
-      final Uint8List u = image.planes[1].bytes;
-      final Uint8List v = image.planes[2].bytes;
-
-      // Copy Y channel (Luma)
-      for (int i = 0; i < height; i++) {
-        nv21.setRange(
-            i * width,
-            (i * width) + width,
-            y.sublist(i * image.planes[0].bytesPerRow,
-                (i * image.planes[0].bytesPerRow) + width));
-      }
-
-      // Interleave U and V channels (Chroma)
-      int uvIndex = ySize;
-      for (int i = 0; i < height ~/ 2; i++) {
-        for (int j = 0; j < width ~/ 2; j++) {
-          nv21[uvIndex++] = v[i * image.planes[2].bytesPerRow +
-              j * image.planes[2].bytesPerPixel!]; // V
-          nv21[uvIndex++] = u[i * image.planes[1].bytesPerRow +
-              j * image.planes[1].bytesPerPixel!]; // U
-        }
-      }
-
-      return nv21;
-    } catch (e) {
-      print("❌ Error converting YUV to NV21: $e");
-      return null;
-    }
-  }
-  // InputImage? getInputImage() {
-  //   final camera =
-  //       camDirec == CameraLensDirection.front ? cameras[1] : cameras[0];
-  //   final sensorOrientation = camera.sensorOrientation;
-  //
-  //   InputImageRotation? rotation;
-  //   if (Platform.isIOS) {
-  //     rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
-  //   } else if (Platform.isAndroid) {
-  //     var rotationCompensation =
-  //         _orientations[controller!.value.deviceOrientation];
-  //     if (rotationCompensation == null) return null;
-  //     if (camera.lensDirection == CameraLensDirection.front) {
-  //       // front-facing
-  //       rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
-  //     } else {
-  //       // back-facing
-  //       rotationCompensation =
-  //           (sensorOrientation - rotationCompensation + 360) % 360;
-  //     }
-  //     rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
-  //   }
-  //   if (rotation == null) return null;
-  //
-  //   final format = InputImageFormatValue.fromRawValue(frame!.format.raw);
-  //   if (format == null ||
-  //       (Platform.isAndroid && format != InputImageFormat.nv21) ||
-  //       (Platform.isIOS && format != InputImageFormat.bgra8888)) return null;
-  //
-  //   if (frame!.planes.length != 1) return null;
-  //   final plane = frame!.planes.first;
-  //
-  //   return InputImage.fromBytes(
-  //     bytes: plane.bytes,
-  //     metadata: InputImageMetadata(
-  //       size: Size(frame!.width.toDouble(), frame!.height.toDouble()),
-  //       rotation: rotation,
-  //       format: format,
-  //       bytesPerRow: plane.bytesPerRow,
-  //     ),
-  //   );
-  // }
-
   Widget buildResult() {
     if (_scanResults == null ||
         controller == null ||
@@ -528,7 +420,7 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  //TODO toggle camera direction
+  // toggle camera direction
   void _toggleCameraDirection() async {
     if (camDirec == CameraLensDirection.back) {
       camDirec = CameraLensDirection.front;
