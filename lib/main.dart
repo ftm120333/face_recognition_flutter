@@ -39,6 +39,8 @@ class _MyHomePageState extends State<MyHomePage> {
   late CameraDescription description = cameras[1];
   CameraLensDirection camDirec = CameraLensDirection.front;
   late List<Recognition> recognitions = [];
+  int samplesCollected = 0;
+  List<List<double>> sampleEmbeddings = [];
 
   //TODO declare face detector
   late FaceDetector faceDetector;
@@ -150,57 +152,142 @@ class _MyHomePageState extends State<MyHomePage> {
 
   // Face Registration Dialogue
   TextEditingController textEditingController = TextEditingController();
-  showFaceRegistrationDialogue(img.Image croppedFace, Recognition recognition) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Face Registration", textAlign: TextAlign.center),
-        alignment: Alignment.center,
-        content: SizedBox(
-          height: 340,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+  // showFaceRegistrationDialogue(img.Image croppedFace, Recognition recognition) {
+  //   showDialog(
+  //     context: context,
+  //     builder: (ctx) => AlertDialog(
+  //       title: const Text("Face Registration", textAlign: TextAlign.center),
+  //       alignment: Alignment.center,
+  //       content: SizedBox(
+  //         height: 340,
+  //         child: Column(
+  //           crossAxisAlignment: CrossAxisAlignment.center,
+  //           children: [
+  //             const SizedBox(
+  //               height: 20,
+  //             ),
+  //             Image.memory(
+  //               Uint8List.fromList(img.encodePng(croppedFace)),
+  //               width: 200,
+  //               height: 200,
+  //             ),
+  //             SizedBox(
+  //               width: 200,
+  //               child: TextField(
+  //                   controller: textEditingController,
+  //                   decoration: const InputDecoration(
+  //                       fillColor: Colors.white,
+  //                       filled: true,
+  //                       hintText: "Enter Name")),
+  //             ),
+  //             const SizedBox(
+  //               height: 10,
+  //             ),
+  //             ElevatedButton(
+  //                 onPressed: () {
+  //                   recognizer.registerFaceInDB(
+  //                       textEditingController.text, recognition.embeddings);
+  //                   textEditingController.text = "";
+  //                   Navigator.pop(context);
+  //                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+  //                     content: Text("Face Registered"),
+  //                   ));
+  //                 },
+  //                 style: ElevatedButton.styleFrom(
+  //                     backgroundColor: Colors.blue,
+  //                     minimumSize: const Size(200, 40)),
+  //                 child: const Text("Register"))
+  //           ],
+  //         ),
+  //       ),
+  //       contentPadding: EdgeInsets.zero,
+  //     ),
+  //   );
+  // }
+
+// Replace showFaceRegistrationDialogue with this:
+
+  void showFaceRegistrationDialogue(
+      img.Image croppedFace, Recognition recognition) {
+    samplesCollected++;
+    sampleEmbeddings.add(recognition.embeddings);
+
+    if (samplesCollected < 3) {
+      // Collect 3 samples
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title:
+              Text("Sample $samplesCollected/3", textAlign: TextAlign.center),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(
-                height: 20,
-              ),
               Image.memory(
                 Uint8List.fromList(img.encodePng(croppedFace)),
                 width: 200,
                 height: 200,
               ),
-              SizedBox(
-                width: 200,
-                child: TextField(
-                    controller: textEditingController,
-                    decoration: const InputDecoration(
-                        fillColor: Colors.white,
-                        filled: true,
-                        hintText: "Enter Name")),
-              ),
-              const SizedBox(
-                height: 10,
-              ),
+              SizedBox(height: 20),
+              Text("Please move your head slightly",
+                  style: TextStyle(fontSize: 16)),
+              SizedBox(height: 20),
               ElevatedButton(
-                  onPressed: () {
-                    recognizer.registerFaceInDB(
-                        textEditingController.text, recognition.embeddings);
-                    textEditingController.text = "";
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text("Face Registered"),
-                    ));
-                  },
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      minimumSize: const Size(200, 40)),
-                  child: const Text("Register"))
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: Text("Capture Next Sample"),
+              ),
             ],
           ),
         ),
-        contentPadding: EdgeInsets.zero,
-      ),
-    );
+      );
+    } else {
+      // After collecting all samples, show name input
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Final Registration", textAlign: TextAlign.center),
+          content: SizedBox(
+            height: 340,
+            child: Column(
+              children: [
+                Text("3 samples collected", style: TextStyle(fontSize: 16)),
+                SizedBox(height: 20),
+                TextField(
+                  controller: textEditingController,
+                  decoration: InputDecoration(hintText: "Enter Name"),
+                ),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () async {
+                    // Average all samples
+                    List<double> averaged =
+                        List.filled(sampleEmbeddings[0].length, 0.0);
+                    for (var embedding in sampleEmbeddings) {
+                      for (int i = 0; i < embedding.length; i++) {
+                        averaged[i] += embedding[i];
+                      }
+                    }
+                    for (int i = 0; i < averaged.length; i++) {
+                      averaged[i] /= sampleEmbeddings.length;
+                    }
+
+                    await recognizer.registerFaceInDB(
+                        textEditingController.text, averaged);
+
+                    textEditingController.text = "";
+                    samplesCollected = 0;
+                    sampleEmbeddings.clear();
+                    Navigator.pop(context);
+                  },
+                  child: Text("Register"),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   static var IOS_BYTES_OFFSET = 28;
