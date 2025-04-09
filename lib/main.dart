@@ -272,9 +272,10 @@ class _MyHomePageState extends State<MyHomePage> {
                       averaged[i] /= sampleEmbeddings.length;
                     }
 
-                    await recognizer.registerFaceInDB(
-                        textEditingController.text, averaged);
-
+                    for (var emb in sampleEmbeddings) {
+                      await recognizer.registerFaceInDB(
+                          textEditingController.text, emb);
+                    }
                     textEditingController.text = "";
                     samplesCollected = 0;
                     sampleEmbeddings.clear();
