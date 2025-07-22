@@ -1,16 +1,44 @@
 # test_face_reco
 
-A new Flutter project.
+# 👁️‍🗨️ Face Detection & Recognition App (Flutter + ML Kit + TensorFlow Lite)
 
-## Getting Started
+A real-time face recognition mobile app built with **Flutter**, leveraging **Google ML Kit** for face detection and a custom **TFLite MobileFaceNet** model for face recognition. Designed for scalable identity verification, this app compares live camera frames with a stored face embedding database.
 
-This project is a starting point for a Flutter application.
+---
 
-A few resources to get you started if this is your first Flutter project:
+## 📱 Features
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- 📷 Real-time **Face Detection** using Google ML Kit
+- 🤖 **Face Recognition** with MobileFaceNet (TensorFlow Lite)
+- 🔒 Embedding-based identity matching (3 embeddings per person)
+- 🧠 lightweight face embeddings (128D)
+- ✏️ Prompts user for integer input after identification (custom workflow)
+- 🚀 Flutter-optimized for smooth camera and ML processing
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---
+
+## 🧰 Tech Stack
+
+| Layer              | Tool / Library                     |
+|--------------------|------------------------------------|
+| Frontend           | Flutter                            |
+| Face Detection     | Google ML Kit                      |
+| Face Recognition   | TensorFlow Lite (MobileFaceNet)    |
+| Embedding Matching | Euclidean Distance / Cosine Similarity |
+| Camera Feed        | Flutter camera plugin              |
+
+---
+
+## 🧪 How It Works
+
+1. The app opens the **camera preview** in real time.
+2. **Google ML Kit** detects one or more faces in each frame.
+3. Each face is **aligned and cropped**, then passed to the **TFLite model**.
+4. The model generates a **128-dimension embedding** for each face.
+5. The app sends the embedding to an external API which:
+   - Compares it against stored embeddings (3 per person).
+   - Returns the **matched identity (or unknown)**.
+6. The app prompts the user for an **integer input** based on the result.
+7. That input, along with identity data, is sent to the backend.
+
+---
